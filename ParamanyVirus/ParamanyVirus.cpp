@@ -32,6 +32,7 @@ std::vector<std::string> get_files_inDirectory(const std::string& _path, const s
 	return return_;
 }
 
+// Small endian으로 값을 읽어들임
 DWORD ReadDWORD(fstream* target, uint32_t addr)
 {
 	DWORD result = 0;
@@ -45,6 +46,7 @@ DWORD ReadDWORD(fstream* target, uint32_t addr)
 	}
 	return result;
 }
+// Small endian으로 값을 씀
 void WriteDWORD(fstream* target, uint32_t addr, uint32_t value)
 {
 	target->seekp(addr);
@@ -105,7 +107,7 @@ int APIENTRY wWinMain(
 		
 		DWORD NT_HEADER = ReadDWORD(&target, 0x3C); // NT HEADER 오프셋 읽기
 		temp = ReadDWORD(&target, NT_HEADER + 6); // 섹션 개수 구하기
-		temp &= 0x0000FFFF;
+		temp &= 0x0000FFFF; // number of sections 값은 2바이트
 		
 		DWORD EXTENDED_SECTION_HEADER = NT_HEADER + 24 + (ReadDWORD(&target, NT_HEADER + 20) & 0x0000FFFF);
 		for (int j = 0; j < temp - 1; j++)
